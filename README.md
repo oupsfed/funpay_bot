@@ -1,0 +1,1 @@
+# funpay_bot
