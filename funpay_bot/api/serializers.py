@@ -51,7 +51,8 @@ class ItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Item
-        fields = ('server',
+        fields = ('id',
+                  'server',
                   'seller',
                   'online',
                   'name',
