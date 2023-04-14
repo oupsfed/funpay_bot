@@ -3,12 +3,13 @@ import json
 import logging
 import os
 from http import HTTPStatus
-from sys import stdout
+from json import JSONDecodeError
+from logging.handlers import RotatingFileHandler
 
 import requests
 import telegram
 from dotenv import load_dotenv
-from rest_framework import status
+from requests import Response
 from telegram import (InlineKeyboardButton, InlineKeyboardMarkup,
                       ReplyKeyboardMarkup)
 from telegram.ext import (CallbackQueryHandler, CommandHandler, Filters,
@@ -17,9 +18,9 @@ from telegram.ext import (CallbackQueryHandler, CommandHandler, Filters,
 load_dotenv()
 
 token = os.getenv('TOKEN')
+admin = os.getenv('ADMIN_CHAT_ID')
 HEADERS = {'Content-type': 'application/json',
            'Content-Encoding': 'utf-8'}
-
 SHORT_NAME = {
     'a': 'action',
     'l': 'lot_id',
@@ -33,9 +34,22 @@ SHORT_NAME = {
     'u': 'chat_id'
 }
 
+logging.basicConfig(
+    level=logging.DEBUG,
+    handlers=[logging.FileHandler(filename="./log_records.log",
+                                  encoding='utf-8', mode='a+')],
+    format='%(asctime)s - %(levelname)s - %(message)s',
+
+)
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-handler = logging.StreamHandler(stdout)
+handler = RotatingFileHandler(
+    'my_logger.log',
+    maxBytes=50000000,
+    backupCount=5,
+    encoding='UTF-8'
+)
 log_format = '%(asctime)s - %(levelname)s - %(message)s'
 formatter = logging.Formatter(fmt=log_format)
 handler.setFormatter(formatter)
@@ -46,78 +60,192 @@ URL = 'http://127.0.0.1:8000/api/'
 
 
 def check_permission(chat_id):
-    link = f'{URL}users/{chat_id}'
-    answer = requests.get(link, headers=HEADERS)
+    answer = get_api_answer(f'users/{chat_id}')
     user = answer.json()
+    if not user['is_staff']:
+        message = 'Недостаточно прав для просмотра данного раздела'
+        send_message(telegram.Bot(token), chat_id, message)
+        logger.debug(f'У {chat_id} {message}')
     return user['is_staff']
+
+
+def send_message(bot: telegram.Bot,
+                 chat_id: int,
+                 message: str) -> None:
+    """
+    Отправляет сообщение в сообщение в Telegram чат.
+
+            Parameters:
+                    bot (telegram.Bot): Объект класса telegram.Bot
+                    chat_id (int): Кому отправить сообщение
+                    message (str): Сообщение
+
+            Returns:
+                    None
+    """
+    buttons = ReplyKeyboardMarkup([
+        ['Избранные Товары', 'Поиск Товара'],
+        ['О проекте', 'Данные по подписке']
+    ], resize_keyboard=True)
+    try:
+        bot.send_message(
+            chat_id=chat_id,
+            text=message,
+            parse_mode='HTML',
+            reply_markup=buttons
+        )
+        logger.debug(
+            (f'Сообщение было отправлено в '
+             f'Telegram-чат пользователю: {chat_id}')
+        )
+    except telegram.TelegramError:
+        logger.error(
+            (f'Ошибка при отправке сообщения в '
+             f'Telegram-чат пользователю: {chat_id}')
+        )
+
+
+def get_api_answer(endpoint: str,
+                   params=None) -> Response:
+    """
+    Делает GET запрос к эндпоинту API-сервиса.
+
+            Parameters:
+                    endpoint (str) : точка доступа
+                    params (dict) : параметры запроса
+
+            Returns:
+                    answer (dict): Информация с API-сервиса
+    """
+    endpoint = f'{URL}{endpoint}'
+
+    try:
+        answer = requests.get(
+            url=endpoint,
+            headers=HEADERS,
+            params=params
+        )
+        if answer.status_code != HTTPStatus.OK:
+            message = f'Эндпоинт {endpoint} не доступен!'
+            logger.error(message)
+            send_message(telegram.Bot(token),
+                         admin,
+                         message)
+            raise TypeError(message)
+        text = f'Запрос к эндпоинту {endpoint} прошел успешно!'
+        logger.debug(text)
+        return answer
+    except JSONDecodeError as error:
+        message = f'Ошибка при обработке json: {error}'
+        logger.error(message)
+        send_message(telegram.Bot(token),
+                     admin,
+                     message)
+    except requests.RequestException as error:
+        message = f'Ошибка при запросе к API: {error}'
+        logger.error(message)
+        send_message(telegram.Bot(token),
+                     admin,
+                     message)
+
+
+def post_api_answer(endpoint: str,
+                    data: dict) -> Response:
+    """
+    Делает POST запрос к эндпоинту API-сервиса.
+
+            Parameters:
+                    endpoint (str) : точка доступа
+                    data (dict): данные для отправки на API
+
+            Returns:
+                    homework (dict): Информация с API-сервиса в формате JSON
+    """
+    endpoint = f'{URL}{endpoint}'
+    data = json.dumps(data)
+    try:
+        answer = requests.post(
+            url=endpoint,
+            data=data,
+            headers=HEADERS
+        )
+        if answer.status_code != HTTPStatus.CREATED:
+            message = (f'Произошла ошибка при добавлении данных в базу '
+                       f'Отправленные данные: {data}'
+                       f'Ошибка: Response')
+            logger.error(message)
+            send_message(telegram.Bot(token),
+                         admin,
+                         message)
+        text = f'Добавлена новая запись в базу данных: {data}'
+        logger.debug(text)
+        return answer
+    except JSONDecodeError as error:
+        message = f'Ошибка при обработке json: {error}'
+        logger.error(message)
+        send_message(telegram.Bot(token),
+                     admin,
+                     message)
+    except requests.RequestException as error:
+        message = f'Ошибка при запросе к API: {error}'
+        logger.error(message)
+        send_message(telegram.Bot(token),
+                     admin,
+                     message)
 
 
 def wake_up(update, context):
     chat = update.effective_chat
-    link = f'{URL}users/{chat.id}/'
-    answer = requests.get(link, headers=HEADERS)
-    if answer.status_code == status.HTTP_404_NOT_FOUND:
+    logger.debug((f'Новый пользователь запустил бота '
+                  f'{chat.username} - {chat.id}'))
+
+    answer = get_api_answer('users/',
+                            params={
+                                'telegram_chat_id': chat.id
+                            })
+    if answer.json()['count'] == 0:
         data = {
             'first_name': chat.first_name,
             'last_name': chat.last_name,
             'telegram_chat_id': chat.id,
             'username': chat.username
         }
-        answer = requests.post(
-            f'{URL}users/',
-            data=json.dumps(data),
-            headers=HEADERS
-        )
-        response = answer.json()
-        if answer.status_code != HTTPStatus.CREATED:
-            text = (f'Произошла ошибка при добавлении {chat.username}'
-                    f' в БД {response}')
-        else:
-            text = f'Добавлен новый пользователь {chat.username} в БД'
-        logger.error(text)
-    message = '''
-<b>Данный бот находится в состоянии ЗБТ!</b>
-Если хотите следить за информацией не блокируйте его.
-И возможно скоро Вы получите доступ к ЗБТ.'''
-    try:
-        buttons = ReplyKeyboardMarkup([
-            ['Избранные Товары', 'Поиск Товара'],
-            ['Данные по подписке']
-        ], resize_keyboard=True)
-        context.bot.send_message(
-            chat_id=chat.id,
-            text=message,
-            parse_mode='HTML',
-            reply_markup=buttons
-        )
-        text = f'Сообщение было отправлено пользователю {chat.username}'
-        logger.debug(text)
-    except telegram.TelegramError:
-        text = f'Ошибка при отправке сообщения пользователю: {chat.username}'
-        logger.error(text)
+        post_api_answer('users/', data)
+    message = ('<b>Данный бот находится в состоянии ЗБТ!</b>\n'
+               'Если хотите следить за информацией не блокируйте его.\n'
+               'И возможно скоро Вы получите доступ к ЗБТ.')
+    send_message(context.bot, chat.id, message)
+
+
+def information(update, context):
+    message = 'Информация о проекте!'
+    update.message.reply_text(message)
 
 
 def subscribe_info(update, context):
     chat = update.effective_chat
-    if check_permission(chat.id):
-        link = f'{URL}users/{chat.id}'
-        answer = requests.get(link, headers=HEADERS)
-        user = answer.json()
-        message = f'Подписка заканчивается {user["subscribe_time"]}'
-        button = [
-            [InlineKeyboardButton('Продлить подписку', url=f'{URL}')]
-        ]
-        reply_markup = InlineKeyboardMarkup(button)
-        update.message.reply_text(message, reply_markup=reply_markup)
+    if not check_permission(chat.id):
+        return 'Access Denied'
+    answer = get_api_answer(f'users/{chat.id}/')
+    user = answer.json()
+    message = f'Подписка заканчивается {user["subscribe_time"]}'
+    button = [
+        [InlineKeyboardButton('Продлить подписку', url=f'{URL}')]
+    ]
+    reply_markup = InlineKeyboardMarkup(button)
+    update.message.reply_text(message, reply_markup=reply_markup)
 
 
 def favorite_items(update, context):
     chat = update.effective_chat
     buttons = []
     if check_permission(chat.id):
+        logger.debug(f'{chat.id} успешно зашел в избранные товары')
         message = 'Ваши избранные товары:'
-        link = f'{URL}following/?user__telegram_chat_id={chat.id}'
-        answer = requests.get(link, headers=HEADERS)
+        answer = get_api_answer('following/',
+                                params={
+                                    'user__telegram_chat_id': chat.id
+                                })
         items = answer.json()
         items = items['results']
 
@@ -138,26 +266,25 @@ def favorite_items(update, context):
 def convert_to_list(data):
     data = data.split(',')
     converted_data = {}
-    print(data)
     for item in data:
         if '-' in item:
             item = item.split('-')
-            print(SHORT_NAME[item[0]])
             item_name = SHORT_NAME[item[0]]
             item_value = item[1]
             converted_data[item_name] = item_value
+    text = f'Конвертированы данные {data} в {converted_data}'
+    logger.debug(text)
     return converted_data
 
 
-def show_item(update):
+def show_item(update, data):
     query = update.callback_query
-    data = convert_to_list(query.data)
-    link = f'{URL}following/{data["item_id"]}'
-    answer = requests.get(link, headers=HEADERS)
+    answer = get_api_answer(f'following/{data["item_id"]}/')
     item = answer.json()
     is_online_sellers = 'Нет'
     if item['monitoring_online_sellers']:
         is_online_sellers = 'Да'
+    logger.debug(f'{update.effective_chat.id} просматривает товар {item}')
     message = (f"Игра: <b>{item['lot']['game']}</b>\n"
                f"Сервер: <b>{item['server']['name']}</b>\n"
                f"Товар: <b>{item['lot']['name']}</b>\n"
@@ -181,21 +308,25 @@ def show_item(update):
                             reply_markup=reply_markup)
 
 
-def delete_item(update):
+def delete_item(update, data):
     query = update.callback_query
-    data = convert_to_list(query.data)
     link = f'{URL}following/{data["item_id"]}'
-    requests.delete(link, headers=HEADERS)
-    message = 'Избранный товар успешно удален!'
+    answer = requests.delete(link, headers=HEADERS)
+    if answer.status_code == HTTPStatus.NO_CONTENT:
+        message = 'Избранный товар успешно удален!'
+        logger.debug(f'{update.effective_chat.id} удалил избранный товар')
+    else:
+        message = 'Произошла ошибка при удалении товара!'
+        logger.error(f'{message} {answer.json()}')
     query.edit_message_text(text=message, parse_mode='HTML')
 
 
-def add_favorite_item_lot(update):
+def add_favorite_item_lot(update, data):
     query = update.callback_query
-    link = f'{URL}lots'
-    answer = requests.get(link, headers=HEADERS)
+    answer = get_api_answer('lots')
     lots = answer.json()['results']
-    print(lots)
+    logger.debug(f'{update.effective_chat.id} добавляет '
+                 f'новый избранный товар')
     buttons = []
     for lot in lots:
         buttons.append(
@@ -214,19 +345,20 @@ def add_favorite_item_lot(update):
     )
 
 
-def add_favorite_item_server(update):
+def add_favorite_item_server(update, data):
     query = update.callback_query
-    data = convert_to_list(query.data)
-    link = f'{URL}servers/?game__id={data["game_id"]}'
+    params = {
+        'game__id': data['game_id']
+    }
     if 'page' in data:
-        link = f'{URL}servers/?game__id={data["game_id"]}&page={data["page"]}'
-        print(link)
-    answer = requests.get(link, headers=HEADERS)
+        params['page'] = data['page']
+    answer = get_api_answer('servers/',
+                            params=params)
+    logger.debug(f'{update.effective_chat.id} выбирает сервер '
+                 f'для игры {data["game_id"]}')
     servers = answer.json()['results']
     next_page = answer.json()['next']
     previous_page = answer.json()['previous']
-    print(answer.json()['next'], answer.json()['previous'])
-
     buttons = []
     for server in servers:
         buttons.append(
@@ -270,9 +402,9 @@ def add_favorite_item_server(update):
     )
 
 
-def add_favorite_item_online_sellers(update):
+def add_favorite_item_online_sellers(update, data):
     query = update.callback_query
-    data = convert_to_list(query.data)
+    logger.debug(f'{update.effective_chat.id} выбирает онлайн торговцев')
     buttons = [
         [InlineKeyboardButton(
             'Да',
@@ -297,32 +429,29 @@ def add_favorite_item_online_sellers(update):
     )
 
 
-def add_favorite_item_send_data(update):
+def add_favorite_item_send_data(update, data):
     query = update.callback_query
-    data = convert_to_list(query.data)
     new_follow = {
         'lot': int(data['item_id']),
         'user': update.effective_chat.id,
         'server': int(data['server_id']),
     }
-    print(new_follow)
-    link = f'{URL}following/'
-    answer = requests.post(link, data=json.dumps(new_follow), headers=HEADERS)
+    answer = post_api_answer('following/', data=new_follow)
     response = answer.json()
     if answer.status_code != HTTPStatus.CREATED:
         text = ('Произошла ошибка при добавлении '
                 f'избранного предмета в БД: {response}')
         message = 'Произошла ошибка при добавлении избранного предмета!'
+        logger.error(text)
     else:
         text = f'Добавлен новый избранный предмет {new_follow} в БД'
         message = 'Избранный предмет успешно добавлен!'
-    logger.error(text)
+        logger.debug(text)
     query.edit_message_text(text=message, parse_mode='HTML')
 
 
-def change_favorite_item_monitoring(update):
+def change_favorite_item_monitoring(update, data):
     query = update.callback_query
-    data = convert_to_list(query.data)
     link = f'{URL}following/{data["item_id"]}/'
     is_monitoring = True
     if data["is_online"] == 'True':
@@ -332,6 +461,7 @@ def change_favorite_item_monitoring(update):
     }
     requests.patch(link, data=json.dumps(data), headers=HEADERS)
     message = 'Действие прошло успешно!'
+    logger.debug('Пользователь изменил избранные предмет')
     query.edit_message_text(text=message, parse_mode='HTML')
 
 
@@ -348,7 +478,8 @@ def inline_buttons(update, _):
         'add_favorite_done': add_favorite_item_send_data,
         'monitoring': change_favorite_item_monitoring
     }
-    actions[data['action']](update)
+    actions[data['action']](update, data)
+    logger.debug(f'{update.effective_chat.id} нажал на кнопку')
 
 
 async def main():
@@ -363,6 +494,11 @@ async def main():
     updater.dispatcher.add_handler(
         MessageHandler(Filters.text('Избранные Товары'), favorite_items)
     )
+
+    updater.dispatcher.add_handler(
+        MessageHandler(Filters.text('О проекте'), information)
+    )
+
     updater.dispatcher.add_handler(
         CallbackQueryHandler(inline_buttons)
     )

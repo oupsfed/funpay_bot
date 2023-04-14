@@ -20,6 +20,8 @@ class UserViewSet(viewsets.ModelViewSet):
     serializer_class = UserSerializer
     permission_classes = [AllowAny, ]
     lookup_field = 'telegram_chat_id'
+    filter_backends = (DjangoFilterBackend,)
+    filterset_fields = ('telegram_chat_id',)
 
     @action(
         methods=['GET'],
