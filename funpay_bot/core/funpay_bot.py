@@ -210,16 +210,45 @@ def wake_up(update, context):
             'telegram_chat_id': chat.id,
             'username': chat.username
         }
+        send_message(context.bot,
+                     admin,
+                     (f'Новый пользователь запустил бота '
+                      f'{chat.username} - {chat.id}'))
         post_api_answer('users/', data)
     message = ('<b>Данный бот находится в состоянии ЗБТ!</b>\n'
                'Если хотите следить за информацией не блокируйте его.\n'
                'И возможно скоро Вы получите доступ к ЗБТ.')
+
     send_message(context.bot, chat.id, message)
 
 
 def information(update, context):
-    message = 'Информация о проекте!'
-    update.message.reply_text(message)
+    message = ('Подписывайся на необходимые '
+               'товары и бот будет присылать '
+               'тебе оповещения каждый раз когда '
+               'цена изменилась либо товар появился на '
+               'рынке!\n'
+               'Доступные товары на данный момент:\n')
+    users = get_api_answer('users',
+                           params={
+                               'is_staff': True,
+                           })
+    users_count = users.json()['count']
+    lots = get_api_answer('lots')
+    lots = lots.json()['results']
+    for lot in lots:
+        message += f"- <b>{lot['game']} - {lot['name']}</b>\n"
+    message += f"Пользователей в ЗБТ: <b>{users_count}</b>"
+    button = [
+        [InlineKeyboardButton('Заявка на ЗБТ',
+                              url='https://forms.gle/ZmYzyokdYWUgEzCN9')]
+    ]
+    reply_markup = InlineKeyboardMarkup(button)
+    update.message.reply_text(message,
+                              reply_markup=reply_markup,
+                              parse_mode='HTML')
+    context.bot.send_photo(update.effective_chat.id,
+                           'https://ltdfoto.ru/images/2023/04/14/tg.png')
 
 
 def subscribe_info(update, context):
@@ -258,6 +287,33 @@ def favorite_items(update, context):
         buttons.append([
             InlineKeyboardButton('Добавить Товар',
                                  callback_data='a-add_favorite,')
+        ])
+        reply_markup = InlineKeyboardMarkup(buttons)
+        update.message.reply_text(message, reply_markup=reply_markup)
+
+
+def finding_items(update, context):
+    chat = update.effective_chat
+    buttons = []
+    if check_permission(chat.id):
+        logger.debug(f'{chat.id} успешно зашел в избранные товары')
+        message = 'Ваши избранные товары:'
+        answer = get_api_answer('finding/',
+                                params={
+                                    'user__telegram_chat_id': chat.id
+                                })
+        items = answer.json()
+        items = items['results']
+
+        for item in items:
+            buttons.append(
+                [InlineKeyboardButton(f'{item["server"]["name"]}',
+                                      callback_data=f'a-show,'
+                                                    f'i-{item["id"]},')]
+            )
+        buttons.append([
+            InlineKeyboardButton('Добавить Товар',
+                                 callback_data='a-add_finding,')
         ])
         reply_markup = InlineKeyboardMarkup(buttons)
         update.message.reply_text(message, reply_markup=reply_markup)
@@ -323,7 +379,10 @@ def delete_item(update, data):
 
 def add_favorite_item_lot(update, data):
     query = update.callback_query
-    answer = get_api_answer('lots')
+    params = {
+        'allow_monitoring': True
+    }
+    answer = get_api_answer('lots', params=params)
     lots = answer.json()['results']
     logger.debug(f'{update.effective_chat.id} добавляет '
                  f'новый избранный товар')
@@ -332,7 +391,7 @@ def add_favorite_item_lot(update, data):
         buttons.append(
             [InlineKeyboardButton(
                 f'{lot["game"]} {lot["name"]}',
-                callback_data=f'a-add_server,'
+                callback_data=f'a-add_foll_server,'
                               f'i-{lot["id"]},'
                               f'g-{lot["game_id"]}')]
         )
@@ -345,7 +404,7 @@ def add_favorite_item_lot(update, data):
     )
 
 
-def add_favorite_item_server(update, data):
+def add_item_server(update, data):
     query = update.callback_query
     params = {
         'game__id': data['game_id']
@@ -360,11 +419,14 @@ def add_favorite_item_server(update, data):
     next_page = answer.json()['next']
     previous_page = answer.json()['previous']
     buttons = []
+    action = 'add_lot'
+    if data['action'] == 'add_find_server':
+        action = 'add_find_lot'
     for server in servers:
         buttons.append(
             [InlineKeyboardButton(
                 f'{server["name"]}',
-                callback_data=f'a-add_lot,'
+                callback_data=f'a-{action},'
                               f'i-{data["item_id"]},'
                               f's-{server["id"]}'
             )]
@@ -465,18 +527,60 @@ def change_favorite_item_monitoring(update, data):
     query.edit_message_text(text=message, parse_mode='HTML')
 
 
+def add_finding_item_lot(update, data):
+    query = update.callback_query
+    params = {
+        'allow_finding': True
+    }
+    answer = get_api_answer('lots', params=params)
+    lots = answer.json()['results']
+    logger.debug(f'{update.effective_chat.id} добавляет '
+                 f'новый избранный товар')
+    buttons = []
+    for lot in lots:
+        buttons.append(
+            [InlineKeyboardButton(
+                f'{lot["game"]} {lot["name"]}',
+                callback_data=f'a-add_find_server,'
+                              f'i-{lot["id"]},'
+                              f'g-{lot["game_id"]}')]
+        )
+    message = 'Выберите Игру:'
+    reply_markup = InlineKeyboardMarkup(buttons)
+    query.edit_message_text(
+        text=message,
+        parse_mode='HTML',
+        reply_markup=reply_markup
+    )
+
+
+def add_finding_name(update, data):
+    query = update.callback_query
+    message = 'Напишите название предмета'
+    print(query.edit_message_text(
+        text=message,
+        parse_mode='HTML'
+    ))
+
+
+def add_finding_done(update, context):
+    print("YES")
+
+
 def inline_buttons(update, _):
     query = update.callback_query
     data = convert_to_list(query.data)
-
     actions = {
         'show': show_item,
         'delete': delete_item,
         'add_favorite': add_favorite_item_lot,
-        'add_server': add_favorite_item_server,
+        'add_foll_server': add_item_server,
         'add_lot': add_favorite_item_online_sellers,
         'add_favorite_done': add_favorite_item_send_data,
-        'monitoring': change_favorite_item_monitoring
+        'monitoring': change_favorite_item_monitoring,
+        'add_finding': add_finding_item_lot,
+        'add_find_server': add_item_server,
+        'add_find_lot': add_finding_name,
     }
     actions[data['action']](update, data)
     logger.debug(f'{update.effective_chat.id} нажал на кнопку')
@@ -494,7 +598,9 @@ async def main():
     updater.dispatcher.add_handler(
         MessageHandler(Filters.text('Избранные Товары'), favorite_items)
     )
-
+    updater.dispatcher.add_handler(
+        MessageHandler(Filters.text('Поиск Товара'), finding_items)
+    )
     updater.dispatcher.add_handler(
         MessageHandler(Filters.text('О проекте'), information)
     )

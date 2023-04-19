@@ -1,8 +1,7 @@
 import datetime
 
+from lots.models import FindingLot, FollowingLot, Game, Item, Lot, Server
 from rest_framework import serializers
-
-from lots.models import FollowingLot, Game, Item, Lot, Server
 from users.models import User
 
 
@@ -24,19 +23,15 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = ('subscribe_time',)
 
 
-class ServerSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Server
-        fields = ('id', 'game', 'name')
-
-
 class LotSerializer(serializers.ModelSerializer):
     game = serializers.SerializerMethodField()
     game_id = serializers.SerializerMethodField()
 
     class Meta:
         model = Lot
-        fields = ('id', 'name', 'link', 'game', 'game_id', 'allow_monitoring')
+        fields = ('id', 'name', 'link', 'game', 'game_id',
+                  'allow_monitoring',
+                  'allow_finding')
 
     def get_game(self, obj):
         return f'{obj.game.name} {obj.game.loc}'
@@ -81,6 +76,14 @@ class GameSerializer(serializers.ModelSerializer):
         return serializer.data
 
 
+class ServerSerializer(serializers.ModelSerializer):
+    game = GameSerializer()
+
+    class Meta:
+        model = Server
+        fields = ('id', 'game', 'name')
+
+
 class FollowingLotSerializer(serializers.ModelSerializer):
     lot = LotSerializer()
     server = ServerSerializer()
@@ -89,4 +92,16 @@ class FollowingLotSerializer(serializers.ModelSerializer):
     class Meta:
         model = FollowingLot
         fields = ('id', 'lot', 'server', 'price', 'user',
+                  'monitoring_online_sellers')
+
+
+class FindingLotSerializer(serializers.ModelSerializer):
+    lot = LotSerializer()
+    server = ServerSerializer()
+    user = UserSerializer()
+
+    class Meta:
+        model = FindingLot
+        fields = ('id', 'lot', 'server', 'price', 'user',
+                  'name',
                   'monitoring_online_sellers')

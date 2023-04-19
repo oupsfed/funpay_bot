@@ -1,9 +1,8 @@
 import os
 
 from dotenv import load_dotenv
-from telegram import Bot
-
 from lots.models import FollowingLot, Item
+from telegram import Bot
 
 load_dotenv()
 
@@ -33,7 +32,7 @@ def alert():
 Цена <b>{following_lot.lot.name}</b> изменилась на <b>{min(price)} ₽</b>
 Игра: <b>{following_lot.lot.game}</b>
 Сервер: <b>{following_lot.server}</b>
-Количество: <b>{item.amount}</b>
+Количество: <b>{item.amount} кк</b>
 Ссылка: <b>{item.link}</b>
 '''
             global bot

@@ -1,18 +1,17 @@
+from core import alert_users
+from core.update import update_games_and_lots, update_items
 from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
+from lots.models import FindingLot, FollowingLot, Game, Item, Lot, Server
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-
-from core import alert_users
-from core.update import update_games_and_lots, update_items
-from lots.models import FollowingLot, Game, Item, Lot, Server
 from users.models import User
 
-from .serializers import (FollowingLotSerializer, GameSerializer,
-                          ItemSerializer, LotSerializer, ServerSerializer,
-                          UserSerializer)
+from .serializers import (FindingLotSerializer, FollowingLotSerializer,
+                          GameSerializer, ItemSerializer, LotSerializer,
+                          ServerSerializer, UserSerializer)
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -21,7 +20,7 @@ class UserViewSet(viewsets.ModelViewSet):
     permission_classes = [AllowAny, ]
     lookup_field = 'telegram_chat_id'
     filter_backends = (DjangoFilterBackend,)
-    filterset_fields = ('telegram_chat_id',)
+    filterset_fields = ('telegram_chat_id', 'is_staff')
 
     @action(
         methods=['GET'],
@@ -109,11 +108,13 @@ class GameViewSet(viewsets.ModelViewSet):
 
 
 class LotViewSet(viewsets.ModelViewSet):
-    queryset = Lot.objects.filter(allow_monitoring=True).all()
+    queryset = Lot.objects.all()
     serializer_class = LotSerializer
     permission_classes = [AllowAny, ]
-    filter_backends = (filters.SearchFilter,)
+    filter_backends = (filters.SearchFilter, DjangoFilterBackend)
     search_fields = ('game__name',)
+    filterset_fields = ('allow_monitoring',
+                        'allow_finding')
 
 
 class ItemViewSet(viewsets.ModelViewSet):
@@ -172,10 +173,44 @@ class FollowingLotViewSet(viewsets.ModelViewSet):
         serializer.is_valid()
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
+    @action(
+        methods=['POST'],
+        permission_classes=(AllowAny,),
+        detail=True,
+        url_path='change_monitoring',
+    )
+    def change_monitoring(self, request, pk):
+        following_lot = FollowingLot.objects.get(pk=pk)
+        monitoring = following_lot.monitoring_online_sellers
+        following_lot.monitoring_online_sellers = not monitoring
+        following_lot.save()
+        serializer = self.get_serializer(following_lot)
+        return Response(serializer.data)
+
+
+class FindingLotViewSet(viewsets.ModelViewSet):
+    queryset = FindingLot.objects.all()
+    serializer_class = FindingLotSerializer
+    permission_classes = [AllowAny, ]
+    filter_backends = (DjangoFilterBackend,)
+    filterset_fields = ('user__telegram_chat_id',)
+
+    def create(self, request, *args, **kwargs):
+        lot = get_object_or_404(Lot, pk=request.data['lot'])
+        server = get_object_or_404(Server, pk=request.data['server'])
+        user = get_object_or_404(User, telegram_chat_id=request.data['user'])
+        data = FindingLot.objects.create(lot=lot,
+                                         server=server,
+                                         user=user,
+                                         name=request.data['name'])
+        serializer = FindingLotSerializer(data=data)
+        serializer.is_valid()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
 
 class ServerViewSet(viewsets.ModelViewSet):
     queryset = Server.objects.all()
     serializer_class = ServerSerializer
     filter_backends = (filters.SearchFilter, DjangoFilterBackend)
-    filterset_fields = ('game__id',)
+    filterset_fields = ('game__id', 'game__lot__id')
     search_fields = ('name',)

@@ -1,5 +1,4 @@
 from django.db import models
-
 from users.models import User
 
 
@@ -36,6 +35,7 @@ class Lot(models.Model):
     name = models.TextField()
     link = models.URLField(unique=True)
     allow_monitoring = models.BooleanField(default=False)
+    allow_finding = models.BooleanField(default=False)
 
     def __str__(self):
         return f'{self.game.name} {self.game.loc} - {self.name}'
@@ -73,4 +73,21 @@ class FollowingLot(models.Model):
                                blank=True,
                                null=True)
     price = models.FloatField(blank=True, null=True)
+    monitoring_online_sellers = models.BooleanField(default=False)
+
+
+class FindingLot(models.Model):
+    lot = models.ForeignKey(Lot,
+                            on_delete=models.CASCADE,
+                            related_name='finding')
+    user = models.ForeignKey(User,
+                             on_delete=models.CASCADE,
+                             related_name='finding')
+    server = models.ForeignKey(Server,
+                               on_delete=models.CASCADE,
+                               related_name='finding',
+                               blank=True,
+                               null=True)
+    price = models.FloatField(blank=True, null=True)
+    name = models.TextField()
     monitoring_online_sellers = models.BooleanField(default=False)
