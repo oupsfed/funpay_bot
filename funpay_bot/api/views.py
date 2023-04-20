@@ -123,7 +123,7 @@ class ItemViewSet(viewsets.ModelViewSet):
     permission_classes = [AllowAny, ]
     filter_backends = (DjangoFilterBackend, filters.SearchFilter)
     filterset_fields = ('name', 'online')
-    search_fields = ('server__name',)
+    search_fields = ('name',)
 
     @action(
         methods=['GET'],

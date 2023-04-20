@@ -98,5 +98,50 @@ def update_items():
                 online=online,
                 lot=lot
             ))
+    finding_lots = Lot.objects.filter(allow_finding=True)
+    for lot in finding_lots:
+        Item.objects.filter(lot=lot).delete()
+        r = requests.get(lot.link)
+        soup = bs(r.text, "html.parser")
+        items = soup.find_all('a', class_='tc-item')
+        for item in items:
+            server = item.find('div', class_='tc-server')
+            seller = item.find('div', class_='media-user-name')
+            item_name = item.find('div', class_='tc-desc-text')
+            amount = item.find('div', class_='tc-amount')
+            price = item.find('div', class_='tc-price')
+            online = bool(item.find('div', class_='online'))
+
+            if item_name is None:
+                item_name = 'Валюта'
+            else:
+                item_name = item_name.text
+
+            if amount is None:
+                amount = 1
+            else:
+                amount = int(amount.text.replace(' ', ''))
+
+            if server:
+                server = server.string
+                Server.objects.get_or_create(
+                    name=server,
+                    game=lot.game
+                )
+                server = Server.objects.get(name=server)
+            price = price.text.strip()
+            price = price[:price.find('₽')]
+            price = price.replace(' ', '')
+            price = float(price)
+            data.append(Item(
+                server=server,
+                seller=seller.string.strip(),
+                name=item_name,
+                amount=amount,
+                price=price,
+                link=item['href'],
+                online=online,
+                lot=lot
+            ))
     Item.objects.bulk_create(data)
     return f'Updated {len(data)} items'

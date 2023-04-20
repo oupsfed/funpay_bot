@@ -1,3 +1,4 @@
+from http import HTTPStatus
 from typing import Optional
 
 from aiogram import Router, types
@@ -8,7 +9,12 @@ from magic_filter import F
 from utils import (check_permissions, delete_api_answer, get_api_answer,
                    post_api_answer)
 
+from messages import MESSAGES
+
+from middlewares.is_staff import IsStaffMessageMiddleware
+
 router = Router()
+router.message.middleware(IsStaffMessageMiddleware())
 
 
 class FollowingLotCallbackFactory(CallbackData, prefix='following_lots'):
@@ -19,22 +25,6 @@ class FollowingLotCallbackFactory(CallbackData, prefix='following_lots'):
     user_id: Optional[int]
     monitoring_online_sellers: Optional[bool]
     page: Optional[int]
-
-
-@router.message(Command('start'))
-async def cmd_start(message: types.Message):
-    builder = ReplyKeyboardBuilder()
-    builder.row(
-        types.KeyboardButton(text="Избранные Товары"),
-        types.KeyboardButton(text="Поиск Товара"),
-    )
-    builder.row(
-        types.KeyboardButton(text="Информация"),
-    )
-
-    await message.answer('123',
-                         parse_mode='HTML',
-                         reply_markup=builder.as_markup(resize_keyboard=True))
 
 
 @router.message(Text('Избранные Товары'))
@@ -103,7 +93,7 @@ async def callbacks_show_following_lot(
 
 @router.callback_query(
     FollowingLotCallbackFactory.filter(F.action == 'change-monitoring'))
-async def callbacks_show_following_lot(
+async def callbacks_change_monitoring(
         callback: types.CallbackQuery,
         callback_data: FollowingLotCallbackFactory
 ):
