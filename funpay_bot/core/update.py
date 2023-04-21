@@ -2,6 +2,8 @@ import json
 
 import requests
 from bs4 import BeautifulSoup as bs
+
+from core.utils import parse_info
 from lots.models import Item, Lot, Server
 
 
@@ -53,94 +55,47 @@ def update_games_and_lots():
 
 
 def update_items():
-    lots = Lot.objects.filter(allow_monitoring=True)
+    following_lots = Lot.objects.filter(allow_monitoring=True)
+    finding_lots = Lot.objects.filter(allow_finding=True)
     data = []
-    for lot in lots:
+    for lot in following_lots:
         Item.objects.filter(lot=lot).delete()
-        r = requests.get(lot.link)
-        soup = bs(r.text, "html.parser")
-        items = soup.find_all('a', class_='tc-item')
-        for item in items:
-            server = item.find('div', class_='tc-server')
-            seller = item.find('div', class_='media-user-name')
-            item_name = item.find('div', class_='tc-desc-text')
-            amount = item.find('div', class_='tc-amount')
-            price = item.find('div', class_='tc-price')
-            online = bool(item.find('div', class_='online'))
-
-            if item_name is None:
-                item_name = 'Валюта'
-            else:
-                item_name = item_name.text
-
-            if amount is None:
-                amount = 1
-            else:
-                amount = amount.text
-                amount = int(amount[:amount.find(' ')])
-
-            if server:
-                server = server.string
+        lot_data = parse_info(lot.link)
+        for item in lot_data:
+            if item['server']:
                 Server.objects.get_or_create(
-                    name=server,
+                    name=item['server'],
                     game=lot.game
                 )
-                server = Server.objects.get(name=server)
-            price = price.text.strip()
-            price = float(price[:price.find(' ')])
+                item['server'] = Server.objects.get(name=item['server'])
             data.append(Item(
-                server=server,
-                seller=seller.string.strip(),
-                name=item_name,
-                amount=amount,
-                price=price,
-                link=item['href'],
-                online=online,
+                server=item['server'],
+                seller=item['seller'],
+                name=item['item_name'],
+                amount=item['amount'],
+                price=item['price'],
+                link=item['link'],
+                online=item['online'],
                 lot=lot
             ))
-    finding_lots = Lot.objects.filter(allow_finding=True)
     for lot in finding_lots:
         Item.objects.filter(lot=lot).delete()
-        r = requests.get(lot.link)
-        soup = bs(r.text, "html.parser")
-        items = soup.find_all('a', class_='tc-item')
-        for item in items:
-            server = item.find('div', class_='tc-server')
-            seller = item.find('div', class_='media-user-name')
-            item_name = item.find('div', class_='tc-desc-text')
-            amount = item.find('div', class_='tc-amount')
-            price = item.find('div', class_='tc-price')
-            online = bool(item.find('div', class_='online'))
-
-            if item_name is None:
-                item_name = 'Валюта'
-            else:
-                item_name = item_name.text
-
-            if amount is None:
-                amount = 1
-            else:
-                amount = int(amount.text.replace(' ', ''))
-
-            if server:
-                server = server.string
+        lot_data = parse_info(lot.link)
+        for item in lot_data:
+            if item['server']:
                 Server.objects.get_or_create(
-                    name=server,
+                    name=item['server'],
                     game=lot.game
                 )
-                server = Server.objects.get(name=server)
-            price = price.text.strip()
-            price = price[:price.find('₽')]
-            price = price.replace(' ', '')
-            price = float(price)
+                item['server'] = Server.objects.get(name=item['server'])
             data.append(Item(
-                server=server,
-                seller=seller.string.strip(),
-                name=item_name,
-                amount=amount,
-                price=price,
-                link=item['href'],
-                online=online,
+                server=item['server'],
+                seller=item['seller'],
+                name=item['item_name'],
+                amount=item['amount'],
+                price=item['price'],
+                link=item['link'],
+                online=item['online'],
                 lot=lot
             ))
     Item.objects.bulk_create(data)

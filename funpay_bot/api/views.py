@@ -1,12 +1,13 @@
-from core import alert_users
-from core.update import update_games_and_lots, update_items
 from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
-from lots.models import FindingLot, FollowingLot, Game, Item, Lot, Server
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+
+from core import alert_users
+from core.update import update_games_and_lots, update_items
+from lots.models import FindingLot, FollowingLot, Game, Item, Lot, Server
 from users.models import User
 
 from .serializers import (FindingLotSerializer, FollowingLotSerializer,
@@ -152,7 +153,7 @@ class ItemViewSet(viewsets.ModelViewSet):
     def update_all(self, request):
         updated_items = update_items()
         alerted_users = alert_users.alert()
-        return Response(f'{updated_items} {alerted_users}')
+        return Response(f'{updated_items} - {alerted_users}')
 
 
 class FollowingLotViewSet(viewsets.ModelViewSet):
@@ -206,6 +207,20 @@ class FindingLotViewSet(viewsets.ModelViewSet):
         serializer = FindingLotSerializer(data=data)
         serializer.is_valid()
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(
+        methods=['POST'],
+        permission_classes=(AllowAny,),
+        detail=True,
+        url_path='change_monitoring',
+    )
+    def change_monitoring(self, request, pk):
+        finding_lot = FindingLot.objects.get(pk=pk)
+        monitoring = finding_lot.monitoring_online_sellers
+        finding_lot.monitoring_online_sellers = not monitoring
+        finding_lot.save()
+        serializer = self.get_serializer(finding_lot)
+        return Response(serializer.data)
 
 
 class ServerViewSet(viewsets.ModelViewSet):

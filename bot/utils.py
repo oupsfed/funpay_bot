@@ -51,6 +51,28 @@ def post_api_answer(endpoint: str,
     return answer
 
 
+def patch_api_answer(endpoint: str,
+                     data: dict) -> Response:
+    """
+    Делает POST запрос к эндпоинту API-сервиса.
+
+            Parameters:
+                    endpoint (str) : точка доступа
+                    data (dict): данные для отправки на API
+
+            Returns:
+                    homework (dict): Информация с API-сервиса в формате JSON
+    """
+    endpoint = f'{URL}{endpoint}'
+    data = json.dumps(data)
+    answer = requests.patch(
+        url=endpoint,
+        data=data,
+        headers=HEADERS
+    )
+    return answer
+
+
 def delete_api_answer(endpoint: str) -> Response:
     """
     Делает GET запрос к эндпоинту API-сервиса.

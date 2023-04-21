@@ -1,7 +1,8 @@
 import datetime
 
-from lots.models import FindingLot, FollowingLot, Game, Item, Lot, Server
 from rest_framework import serializers
+
+from lots.models import FindingLot, FollowingLot, Game, Item, Lot, Server
 from users.models import User
 
 

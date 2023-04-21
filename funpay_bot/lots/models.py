@@ -1,4 +1,5 @@
 from django.db import models
+
 from users.models import User
 
 
@@ -48,8 +49,8 @@ class Item(models.Model):
                                null=True,
                                blank=True)
     seller = models.CharField(max_length=100)
-    name = models.TextField()
-    amount = models.IntegerField()
+    name = models.TextField(blank=True, null=True)
+    amount = models.IntegerField(default=1)
     price = models.FloatField()
     link = models.URLField(unique=True)
     lot = models.ForeignKey(
@@ -57,7 +58,7 @@ class Item(models.Model):
         on_delete=models.CASCADE,
         related_name='item'
     )
-    online = models.BooleanField()
+    online = models.BooleanField(default=False)
 
 
 class FollowingLot(models.Model):
@@ -73,6 +74,7 @@ class FollowingLot(models.Model):
                                blank=True,
                                null=True)
     price = models.FloatField(blank=True, null=True)
+    name = models.TextField(blank=True, null=True)
     monitoring_online_sellers = models.BooleanField(default=False)
 
 

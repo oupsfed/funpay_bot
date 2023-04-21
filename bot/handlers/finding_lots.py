@@ -9,8 +9,7 @@ from aiogram.types import Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from middlewares.is_staff import IsStaffMessageMiddleware
-from utils import get_api_answer, post_api_answer
-
+from utils import get_api_answer, post_api_answer, delete_api_answer, patch_api_answer
 
 router = Router()
 router.message.middleware(IsStaffMessageMiddleware())
@@ -18,6 +17,7 @@ router.message.middleware(IsStaffMessageMiddleware())
 
 class AddFindingLot(StatesGroup):
     choosing_name = State()
+    changing_name = State()
 
 
 class FindingLotCallbackFactory(CallbackData, prefix='finding_lots'):
@@ -58,6 +58,161 @@ async def finding_lots(message: types.Message):
         "Ваши товары в поиске:",
         reply_markup=builder.as_markup()
     )
+
+
+@router.callback_query(FindingLotCallbackFactory.filter(F.action == 'show'))
+async def callbacks_show_following_lot(
+        callback: types.CallbackQuery,
+        callback_data: FindingLotCallbackFactory
+):
+    answer = get_api_answer(f'finding/{callback_data.finding_lot_id}')
+    finding_lot = answer.json()
+    price = '<b>На данный момент товар не найден</b>'
+    if finding_lot['price']:
+        price = f'<b>На данный момент цена: {finding_lot["price"]}</b> ₽'
+    text = (f"Игра: <b>{finding_lot['lot']['game']}</b>\n"
+            f"Сервер: <b>{finding_lot['server']['name']}</b>\n"
+            f"Товар: <b>{finding_lot['name']}</b>\n"
+            f"Ссылка: <b>{finding_lot['lot']['link']}</b>\n"
+            f"{price}")
+    builder = InlineKeyboardBuilder()
+    monitoring = 'Нет'
+    if finding_lot['monitoring_online_sellers']:
+        monitoring = 'Да'
+    builder.button(
+        text=f'Изменить название предмета',
+        callback_data=FindingLotCallbackFactory(
+            action='change-name',
+            finding_lot_id=finding_lot['id']
+        )
+    )
+    builder.button(
+        text=f'Следить за онлайн продавцами: {monitoring}',
+        callback_data=FindingLotCallbackFactory(
+            action='change-monitoring',
+            finding_lot_id=finding_lot['id']
+        )
+    )
+    builder.button(
+        text='Удалить',
+        callback_data=FindingLotCallbackFactory(
+            action='delete',
+            finding_lot_id=finding_lot['id']
+        )
+    )
+    builder.adjust(1)
+    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+
+
+@router.callback_query(
+    FindingLotCallbackFactory.filter(F.action == 'delete'))
+async def callbacks_delete_following_lot(
+        callback: types.CallbackQuery,
+        callback_data: FindingLotCallbackFactory
+):
+    params = {
+        'user__telegram_chat_id': callback.message.chat.id
+    }
+    delete_api_answer(f'finding/{callback_data.finding_lot_id}/')
+    answer = get_api_answer('finding/',
+                            params=params
+                            )
+    lots = answer.json()
+    lots = lots['results']
+    builder = InlineKeyboardBuilder()
+    for lot in lots:
+        builder.button(
+            text=f'{lot["name"]} - {lot["server"]["name"]}',
+            callback_data=FindingLotCallbackFactory(
+                action='show',
+                finding_lot_id=lot['id'])
+        )
+
+    builder.button(
+        text="Добавить",
+        callback_data=FindingLotCallbackFactory(
+            action='add'
+        ))
+    builder.adjust(1)
+    await callback.message.edit_text(
+        "Ваши товары в поиске:",
+        reply_markup=builder.as_markup()
+    )
+
+
+@router.callback_query(
+    FindingLotCallbackFactory.filter(F.action == 'change-monitoring'))
+async def callbacks_change_monitoring(
+        callback: types.CallbackQuery,
+        callback_data: FindingLotCallbackFactory
+):
+    post_api_answer(f'finding/'
+                    f'{callback_data.finding_lot_id}/'
+                    f'change_monitoring/', data={})
+    answer = get_api_answer(f'finding/{callback_data.finding_lot_id}')
+    finding_lot = answer.json()
+    price = '<b>На данный момент товар не найден</b>'
+    if finding_lot['price']:
+        price = f'<b>На данный момент цена: {finding_lot["price"]}</b> ₽'
+    text = (f"Игра: <b>{finding_lot['lot']['game']}</b>\n"
+            f"Сервер: <b>{finding_lot['server']['name']}</b>\n"
+            f"Товар: <b>{finding_lot['name']}</b>\n"
+            f"Ссылка: <b>{finding_lot['lot']['link']}</b>\n"
+            f"{price}")
+    builder = InlineKeyboardBuilder()
+    monitoring = 'Нет'
+    if finding_lot['monitoring_online_sellers']:
+        monitoring = 'Да'
+    builder.button(
+        text=f'Изменить название предмета',
+        callback_data=FindingLotCallbackFactory(
+            action='change-name',
+            finding_lot_id=finding_lot['id']
+        )
+    )
+    builder.button(
+        text=f'Следить за онлайн продавцами: {monitoring}',
+        callback_data=FindingLotCallbackFactory(
+            action='change-monitoring',
+            finding_lot_id=finding_lot['id']
+        )
+    )
+    builder.button(
+        text='Удалить',
+        callback_data=FindingLotCallbackFactory(
+            action='delete',
+            finding_lot_id=finding_lot['id']
+        )
+    )
+    builder.adjust(1)
+    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+
+
+@router.callback_query(
+    FindingLotCallbackFactory.filter(F.action == 'change-name'))
+async def callbacks_change_monitoring(
+        callback: types.CallbackQuery,
+        callback_data: FindingLotCallbackFactory,
+        state: FSMContext
+):
+    await state.update_data(finding_lot_id=callback_data.finding_lot_id)
+    await callback.message.edit_text(
+        text='Введите новое название предмета'
+    )
+    await state.set_state(AddFindingLot.changing_name)
+
+
+@router.message(AddFindingLot.changing_name, F.text)
+async def callbacks_add_finding_lot_step_3(message: Message, state: FSMContext):
+    await state.update_data(name=message.text)
+    data = await state.get_data()
+    finding_lot = data['finding_lot_id']
+    patch_api_answer(f'finding/{finding_lot}/',
+                     data={
+                         'name': data['name']
+                     })
+    await state.clear()
+    await message.answer('Товар для поиска успешно обновлен')
 
 
 @router.callback_query(
@@ -162,6 +317,3 @@ async def callbacks_add_finding_lot_step_3(message: Message, state: FSMContext):
     post_api_answer('finding/', data=finding_lot)
     await state.clear()
     await message.answer('Товар для поиска успешно добавлен')
-
-
-
